@@ -19,10 +19,14 @@ CONF_BUFFER = "buffer"
 CONF_POWER_DEMAND_DIVIDER = "power_demand_divider"
 CONF_OPERATION_STATUS_ID = "operation_status_id"
 CONF_ZERO_OUTPUT_ON_MIN_POWER_DEMAND = "zero_output_on_min_power_demand"
+CONF_DELAYED_START_TIME = "delayed_start_time" #Anpassung 24.09.2024
+CONF_FREIGABE_LAMBDA = "freigabe_lambda" #Anpassung 06.10.2024
+
 
 DEFAULT_MIN_BUFFER = -200
 DEFAULT_MAX_BUFFER = 200
 DEFAULT_BUFFER = 0
+
 
 DEFAULT_MIN_POWER_DEMAND = 0
 DEFAULT_MAX_POWER_DEMAND = 900
@@ -85,6 +89,9 @@ CONFIG_SCHEMA = cv.All(
                 CONF_MAX_POWER_DEMAND, default=DEFAULT_MAX_POWER_DEMAND
             ): cv.int_range(min=1, max=5400),
             cv.Optional(CONF_ZERO_OUTPUT_ON_MIN_POWER_DEMAND, default=True): cv.boolean,
+            # Hier die neue Option für delayed_start_time Anpassung 24.09.2024 und freigabe vom 06.10.2024
+            cv.Optional(CONF_DELAYED_START_TIME, default="0ms"): cv.positive_time_period_milliseconds,
+            cv.Optional(CONF_FREIGABE_LAMBDA,): cv.lambda_,
         }
     )
     .extend(soyosource_modbus.soyosource_modbus_device_schema(0x24))
@@ -116,6 +123,11 @@ async def to_code(config):
         )
     )
     cg.add(var.set_power_demand_calculation(config[CONF_POWER_DEMAND_CALCULATION]))
+    cg.add(var.set_delayed_start_time(config[CONF_DELAYED_START_TIME].total_milliseconds))    #Anpassung 24.09.2024
+    if CONF_FREIGABE_LAMBDA in config:
+        freigabe_lambda = await cg.process_lambda(config[CONF_FREIGABE_LAMBDA], [])
+        cg.add(var.set_freigabe_lambda(freigabe_lambda))        #Anpassung 06.10.2024
+
 
     if CONF_OPERATION_STATUS_ID in config:
         operation_status_sensor = await cg.get_variable(
