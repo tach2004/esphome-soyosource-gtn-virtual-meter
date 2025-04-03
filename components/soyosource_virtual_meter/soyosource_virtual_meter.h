@@ -7,6 +7,8 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/soyosource_modbus/soyosource_modbus.h"
 
+
+
 namespace esphome {
 namespace soyosource_virtual_meter {
 
@@ -58,13 +60,22 @@ class SoyosourceVirtualMeter : public PollingComponent, public soyosource_modbus
   }
 
   void setup() override;
-
   void on_soyosource_modbus_data(const std::vector<uint8_t> &data) override;
   void dump_config() override;
 
   void update() override;
 
   float get_setup_priority() const override { return setup_priority::DATA; }
+
+//Eigene Anpassungen/Erweiterungen // Neue Methode 22.09.2024
+  // Setter für die Verzögerungszeit (wird aus YAML übernommen)
+  void set_delayed_start_time(uint32_t delayed_start_time) {
+    this->delayed_start_time_ = delayed_start_time;
+  } 
+  // Setter für die allgemeine Freigabe der Berechnung 
+  void set_freigabe_lambda(std::function<bool()> freigabe_lambda) {
+    this->freigabe_lambda_ = freigabe_lambda;
+  }
 
  protected:
   PowerDemandCalculation power_demand_calculation_{POWER_DEMAND_CALCULATION_DUMB_OEM_BEHAVIOR};
@@ -102,6 +113,22 @@ class SoyosourceVirtualMeter : public PollingComponent, public soyosource_modbus
   int16_t calculate_power_demand_negative_measurements_(int16_t consumption, uint16_t last_power_demand);
   int16_t calculate_power_demand_restart_on_crossing_zero_(int16_t consumption, uint16_t last_power_demand);
   int16_t calculate_power_demand_oem_(int16_t consumption);
+  
+//Eigene Anpassungen/Erweiterungen
+  // Verzögerungsvariablen 22.09.2024
+  uint32_t delayed_start_time_ = {0};  // Zeit in Millisekunden
+  bool can_calculate_output_ = {false};  // Kontrollvariable für Berechnungsfreigabe
+  uint32_t delay_start_time_ = {0}; // Zeitpunkt, wann die Verzögerung gestartet wurde
+  bool verriegelung_zeitverzoegerung = {false};
+  bool start_zeitverzoegerung = {false};
+  std::function<bool()> freigabe_lambda_ = {nullptr}; //Allgemeine Freigabe der Berechnung
+//  bool check_freigabe_() {  
+//    if (this->freigabe_lambda_ != nullptr) {
+//      return this->freigabe_lambda_();
+//    }
+//    return true;
+//  }   
+
 };
 
 }  // namespace soyosource_virtual_meter
