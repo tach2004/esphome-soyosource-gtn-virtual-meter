@@ -10,6 +10,7 @@ void SoyosourceVirtualMeter::on_soyosource_modbus_data(const std::vector<uint8_t
   ESP_LOGW(TAG, "'%s': Unknown message received!", this->get_modbus_name());
 }
 
+
 void SoyosourceVirtualMeter::setup() {
   this->power_sensor_->add_on_state_callback([this](float state) {
     if (std::isnan(state))
@@ -20,6 +21,8 @@ void SoyosourceVirtualMeter::setup() {
              this->last_power_demand_);
 
     this->last_power_demand_received_ = millis();
+	
+	
   });
 }
 
@@ -61,10 +64,86 @@ void SoyosourceVirtualMeter::update() {
              this->get_modbus_name());
   }
 
-  // Override power demand on emergency power off
+
+// Eigene Anpassungen 22.09.2024###########################################################################################  
+  //Abfrage ob Status gültig und ob in yaml konfiguriert ansonsten true!
+  if (this->freigabe_lambda_ == nullptr) {
+      this->freigabe_lambda_ = []() -> bool { return true; };
+  }
+  //ESP_LOGW(TAG, "'%s': Freigabe_lambda_vor %s", this->get_modbus_name(), this->freigabe_lambda_() ? "true" : "false");
+   // Berechnung von importing_now basierend auf der aktuellen Logik
+  int16_t importing_now = this->power_sensor_->state - this->buffer_; // Aktuellen Verbrauch berechnen  
+  uint32_t now = millis();
+
+
+	//Start Code
+    if (this->delayed_start_time_ > 0 && operation_mode == "Auto" ) {  
+      //output false setzten wenn power_demand 0 ist
+	    if ((this->freigabe_lambda_ == nullptr) || (this->freigabe_lambda_() == true)) {	  
+	    
+	        if (this->power_demand_ == 0 && power_demand == 0 && this->start_zeitverzoegerung == false) {
+                this->can_calculate_output_ = false;
+                this->start_zeitverzoegerung = true;
+	        }	
+	  
+            // Prüfen, ob importing_now > 0 ist
+            if (importing_now > 0 && this->verriegelung_zeitverzoegerung == false && this->start_zeitverzoegerung == true) {
+                // Verzögerung starten, Zeit setzten
+                this->delay_start_time_ = now;
+	    	    this->verriegelung_zeitverzoegerung = true; // Verriegelung aktivieren
+		        this->can_calculate_output_ = false;
+	        }
+	  
+	        if (this->verriegelung_zeitverzoegerung == true) {
+              // Wenn die Verzögerung abgelaufen ist, Freigabe erlauben
+              if (now - this->delay_start_time_ >= this->delayed_start_time_) {
+                this->can_calculate_output_ = true;
+  		        this->verriegelung_zeitverzoegerung = false; // Verriegelung zurücksetzen
+		        this->delay_start_time_ = 0; // Verzögerung zurücksetzen
+		        this->start_zeitverzoegerung = false;
+              } else {
+              this->can_calculate_output_ = false; // Warte auf Ablauf der Verzögerung
+              }
+	        }
+	  
+            if (this->verriegelung_zeitverzoegerung == false || importing_now < 0) {
+              // Verzögerung stoppen, wenn power_sensor < 0 ist
+	            this->verriegelung_zeitverzoegerung = false;
+	        }
+        } else {
+		    this->can_calculate_output_ = false; 
+		    this->delay_start_time_ = 0;
+		    this->verriegelung_zeitverzoegerung = false;
+	        this->start_zeitverzoegerung = true;
+        }  
+    } else {
+      // Wenn keine Verzögerung gesetzt ist, Berechnung immer erlauben
+      this->can_calculate_output_ = true;
+	  this->delay_start_time_ = 0;
+	  this->verriegelung_zeitverzoegerung = false;
+	  this->start_zeitverzoegerung = false;
+    }
+	
+  //ESP_LOGW(TAG, "'%s': Freigabe_lambda_nach %s", this->get_modbus_name(), this->freigabe_lambda_() ? "true" : "false");
+
+//    ESP_LOGW(TAG, "'%s': delayed_start_time: %u, delay_start_time_: %u, now: %u, can_calculate_output_: %s, importing_now: %d, power_demand: %d,power_demand_: %d,verriegelung_zeitverzoegerung: %s,power_sensor_: %f",
+//             this->get_modbus_name(), this->delayed_start_time_, this->delay_start_time_, now,
+//             this->can_calculate_output_ ? "true" : "false", importing_now, power_demand,this->power_demand_,this->verriegelung_zeitverzoegerung ? "true" : "false",
+//			 this->power_sensor_->state);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  // Override power demand on emergency power off or can_calculate_output_ is false
   if (this->emergency_power_off_switch_ != nullptr && this->emergency_power_off_switch_->state) {
     power_demand = 0;
     operation_mode = "Off";
+    ESP_LOGD(TAG, "'%s': Not Aus betätigt",
+             this->get_modbus_name());	
+  } else if (!this->can_calculate_output_) {
+    power_demand = 0; // Setzen auf 0 wenn Berechnung nicht erlaubt ist
+//    operation_mode = "Zeit"; // Optional, um den Modus anzuzeigen
+//    ESP_LOGW(TAG, "'%s': Zeitverzögerung aktiv",
+//             this->get_modbus_name());	
   }
 
   power_demand_per_device = ceilf(power_demand / float(this->power_demand_divider_));
@@ -201,5 +280,8 @@ void SoyosourceVirtualMeter::publish_state_(text_sensor::TextSensor *text_sensor
   text_sensor->publish_state(state);
 }
 
+
+
 }  // namespace soyosource_virtual_meter
 }  // namespace esphome
+
